@@ -13,6 +13,7 @@ jobs:
     strategy:
       matrix:
         node-version: [18.x, 20.x]
+      fail-fast: true # Stop all matrix jobs if any fail
 
     steps:
     - uses: actions/checkout@v3
