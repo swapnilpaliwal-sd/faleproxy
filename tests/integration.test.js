@@ -10,7 +10,7 @@ const nock = require('nock');
 const TEST_PORT = 3099;
 let server;
 
-describe.skip('Integration Tests', () => {
+describe('Integration Tests', () => {
   // Modify the app to use a test port
   beforeAll(async () => {
     // Mock external HTTP requests
