@@ -27,14 +27,9 @@ jobs:
       run: npm ci
       
     - name: Run tests
-      run: npm run test:ci
+      run: npm test
       
-    - name: Upload coverage report
-      uses: actions/upload-artifact@v3
-      with:
-        name: coverage-report
-        path: coverage/
-        
+
   deploy:
     needs: test
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
