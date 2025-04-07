@@ -14,8 +14,20 @@ describe('Integration Tests', () => {
   // Modify the app to use a test port
   beforeAll(async () => {
     // Mock external HTTP requests
+    nock.cleanAll();
     nock.disableNetConnect();
-    nock.enableNetConnect(/(localhost|127\.0\.0\.1):/);
+    nock.enableNetConnect('127.0.0.1');
+    nock.enableNetConnect('localhost');
+    
+    // Enable nock debugging
+    nock.emitter.on('no match', (req) => {
+      console.log('No match for:', {
+        method: req.method,
+        host: req.hostname,
+        path: req.path,
+        headers: req.headers
+      });
+    });
     
     // Create a temporary test app file
     await execAsync('cp app.js app.test.js');
@@ -48,6 +60,7 @@ describe('Integration Tests', () => {
   test('Should replace Yale with Fale in fetched content', async () => {
     // Setup mock for example.com
     nock('https://example.com')
+      .matchHeader('user-agent', 'Faleproxy-Test')
       .get('/')
       .reply(200, sampleHtmlWithYale);
     

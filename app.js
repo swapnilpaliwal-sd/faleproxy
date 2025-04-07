@@ -1,5 +1,12 @@
 const express = require('express');
 const axios = require('axios');
+
+// Create a custom axios instance
+const httpClient = axios.create({
+  headers: {
+    'User-Agent': 'Faleproxy-Test'
+  }
+});
 const cheerio = require('cheerio');
 const path = require('path');
 
@@ -27,11 +34,7 @@ app.post('/fetch', async (req, res) => {
 
     console.log('Fetching URL:', url);
     // Fetch the content from the provided URL
-    const response = await axios.get(url, {
-      headers: {
-        'User-Agent': 'Faleproxy-Test'
-      }
-    });
+    const response = await httpClient.get(url);
     const html = response.data;
 
     // Use cheerio to parse HTML and selectively replace text content, not URLs
