@@ -4,29 +4,24 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 const { sampleHtmlWithYale } = require('./test-utils');
-const nock = require('nock');
+const http = require('http');
 
-// Set a different port for testing to avoid conflict with the main app
+// Set different ports for testing to avoid conflict with the main app
 const TEST_PORT = 3099;
+const CONTENT_SERVER_PORT = 3098;
 let server;
 
 describe('Integration Tests', () => {
-  // Modify the app to use a test port
+  // Set up test environment
   beforeAll(async () => {
-    // Mock external HTTP requests
-    nock.cleanAll();
-    nock.disableNetConnect();
-    nock.enableNetConnect('127.0.0.1');
-    nock.enableNetConnect('localhost');
+    // Create and start the content server
+    const contentServer = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(sampleHtmlWithYale);
+    });
     
-    // Enable nock debugging
-    nock.emitter.on('no match', (req) => {
-      console.log('No match for:', {
-        method: req.method,
-        host: req.hostname,
-        path: req.path,
-        headers: req.headers
-      });
+    await new Promise(resolve => {
+      contentServer.listen(CONTENT_SERVER_PORT, resolve);
     });
     
     // Create a temporary test app file
@@ -37,10 +32,9 @@ describe('Integration Tests', () => {
       : `sed -i 's/const PORT = 3001/const PORT = ${TEST_PORT}/' app.test.js`;
     await execAsync(sedCommand);
     
-    // Start the test server
+    // Start the proxy server
     server = require('child_process').spawn('node', ['app.test.js'], {
-      detached: true,
-      stdio: 'ignore'
+      stdio: 'inherit'
     });
     
     // Give the server time to start
@@ -58,15 +52,9 @@ describe('Integration Tests', () => {
   });
 
   test('Should replace Yale with Fale in fetched content', async () => {
-    // Setup mock for example.com
-    nock('https://example.com')
-      .matchHeader('user-agent', 'Faleproxy-Test')
-      .get('/')
-      .reply(200, sampleHtmlWithYale);
-    
-    // Make a request to our proxy app
+    // Make a request to our proxy app using the content server
     const response = await axios.post(`http://localhost:${TEST_PORT}/fetch`, {
-      url: 'https://example.com/'
+      url: `http://localhost:${CONTENT_SERVER_PORT}/`
     });
     
     expect(response.status).toBe(200);
