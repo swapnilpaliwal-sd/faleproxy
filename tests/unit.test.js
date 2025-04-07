@@ -94,7 +94,7 @@ describe('Yale to Fale replacement logic', () => {
       return this.nodeType === 3;
     }).each(function() {
       const text = $(this).text();
-      const newText = text.replace(/Yale/g, 'Fale');
+      const newText = text.replace(/Yale/gi, 'Fale');
       $(this).replaceWith(newText);
     });
     
