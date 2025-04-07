@@ -10,12 +10,13 @@ const http = require('http');
 const TEST_PORT = 3099;
 const CONTENT_SERVER_PORT = 3098;
 let server;
+let contentServer;
 
 describe('Integration Tests', () => {
   // Set up test environment
   beforeAll(async () => {
     // Create and start the content server
-    const contentServer = http.createServer((req, res) => {
+    contentServer = http.createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(sampleHtmlWithYale);
     });
@@ -32,23 +33,46 @@ describe('Integration Tests', () => {
       : `sed -i 's/const PORT = 3001/const PORT = ${TEST_PORT}/' app.test.js`;
     await execAsync(sedCommand);
     
-    // Start the proxy server
+    // Start the proxy server with pipe to parent for output
     server = require('child_process').spawn('node', ['app.test.js'], {
-      stdio: 'inherit'
+      stdio: ['ignore', 'pipe', 'pipe']
     });
-    
-    // Give the server time to start
-    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Handle server output
+    let serverStarted = false;
+    server.stdout.on('data', (data) => {
+      const output = data.toString();
+      if (output.includes('Faleproxy server running')) {
+        serverStarted = true;
+      }
+    });
+
+    // Wait for server to be ready
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Server failed to start within timeout'));
+      }, 5000);
+
+      const checkServer = setInterval(() => {
+        if (serverStarted) {
+          clearInterval(checkServer);
+          clearTimeout(timeout);
+          resolve();
+        }
+      }, 100);
+    });
   }, 10000); // Increase timeout for server startup
 
   afterAll(async () => {
-    // Kill the test server and clean up
-    if (server && server.pid) {
-      process.kill(-server.pid);
+    // Clean up both servers
+    if (server) {
+      server.kill();
+      await new Promise(resolve => server.on('exit', resolve));
+    }
+    if (contentServer) {
+      await new Promise(resolve => contentServer.close(resolve));
     }
     await execAsync('rm app.test.js');
-    nock.cleanAll();
-    nock.enableNetConnect();
   });
 
   test('Should replace Yale with Fale in fetched content', async () => {
