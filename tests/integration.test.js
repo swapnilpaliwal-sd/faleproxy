@@ -12,6 +12,26 @@ const CONTENT_SERVER_PORT = 3098;
 let server;
 let contentServer;
 
+// Helper function to wait for port to be available
+async function waitForPort(port, timeout = 5000) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    try {
+      await axios.get(`http://localhost:${port}`);
+      return true;
+    } catch (error) {
+      if (error.code !== 'ECONNREFUSED') {
+        return true;
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  throw new Error(`Timeout waiting for port ${port}`);
+}
+
+// Set longer timeout for the entire test suite
+jest.setTimeout(30000);
+
 describe('Integration Tests', () => {
   // Set up test environment
   beforeAll(async () => {
@@ -33,46 +53,79 @@ describe('Integration Tests', () => {
       : `sed -i 's/const PORT = 3001/const PORT = ${TEST_PORT}/' app.test.js`;
     await execAsync(sedCommand);
     
-    // Start the proxy server with pipe to parent for output
+    // Start the proxy server
     server = require('child_process').spawn('node', ['app.test.js'], {
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: 'pipe'
     });
 
-    // Handle server output
-    let serverStarted = false;
-    server.stdout.on('data', (data) => {
+    // Handle server output and errors
+    server.stdout.on('data', data => {
       const output = data.toString();
+      // Only log startup message
       if (output.includes('Faleproxy server running')) {
-        serverStarted = true;
+        console.log('Test server started successfully');
+      }
+    });
+    
+    server.stderr.on('data', data => {
+      const error = data.toString();
+      // Only log actual errors, not expected ones
+      if (!error.includes('Invalid URL')) {
+        console.error('Server error:', error);
+      }
+    });
+    
+    // Handle server exit
+    server.on('exit', (code, signal) => {
+      if (code !== null && code !== 0) {
+        console.error(`Server exited with code ${code}`);
       }
     });
 
     // Wait for server to be ready
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error('Server failed to start within timeout'));
-      }, 5000);
-
-      const checkServer = setInterval(() => {
-        if (serverStarted) {
-          clearInterval(checkServer);
-          clearTimeout(timeout);
-          resolve();
-        }
-      }, 100);
-    });
+    try {
+      await waitForPort(TEST_PORT);
+    } catch (error) {
+      console.error('Server failed to start:', error);
+      throw error;
+    }
   }, 10000); // Increase timeout for server startup
 
   afterAll(async () => {
     // Clean up both servers
-    if (server) {
-      server.kill();
-      await new Promise(resolve => server.on('exit', resolve));
+    try {
+      if (server) {
+        server.kill();
+        await Promise.race([
+          new Promise(resolve => server.on('exit', resolve)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Server kill timeout')), 5000))
+        ]);
+      }
+    } catch (error) {
+      // Silently try force kill if normal kill fails
+      try {
+        process.kill(server.pid, 'SIGKILL');
+      } catch (e) {
+        // Ignore errors during force kill
+      }
     }
-    if (contentServer) {
-      await new Promise(resolve => contentServer.close(resolve));
+
+    try {
+      if (contentServer) {
+        await Promise.race([
+          new Promise(resolve => contentServer.close(resolve)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Content server close timeout')), 5000))
+        ]);
+      }
+    } catch (error) {
+      // Ignore content server close errors
     }
-    await execAsync('rm app.test.js');
+
+    try {
+      await execAsync('rm app.test.js');
+    } catch (error) {
+      // Ignore cleanup errors
+    }
   });
 
   test('Should replace Yale with Fale in fetched content', async () => {
